@@ -490,7 +490,8 @@ app.post('/api/session/:code/transcript', (req, res) => {
             if (/\d+|e\.g\.|for example|such as|because|therefore/i.test(session.accumulatedTranscript)) evalScore += 15;
             evalScore = Math.min(100, Math.max(0, evalScore));
             let feedback = evalScore >= 75 ? 'Good understanding demonstrated.' : evalScore >= 50 ? 'Partial understanding.' : evalScore >= 25 ? 'Answer lacks depth.' : 'Insufficient answer.';
-            session.spokenEvalResult = { success: true, similarity_score: evalScore, feedback };
+            let aiProb = session.latestAI && session.latestAI.ai_probability ? session.latestAI.ai_probability : 0;
+            session.spokenEvalResult = { success: true, similarity_score: evalScore, feedback, ai_probability: aiProb };
         }
     }
     updateSessionRisk(session);
