@@ -332,9 +332,12 @@ app.post('/api/session/create', (req, res) => {
         latestFace: {},
         latestVoice: {},
         latestAI: {},
-        behaviorData: { eyes: 'ok', head: 'ok', tabSwitch: 0, multiFace: false },
+        behaviorData: { eyes: 'ok', head: 'ok', tabSwitch: 0, multiFace: false, faceMissing: false },
         tabSwitchCount: 0,
         pasteCount: 0,
+        headTurnCount: 0,
+        eyeTurnCount: 0,
+        multiFaceCount: 0,
         alerts: [],
         riskScore: { score: 0, level: 'genuine' },
         // Transcript
@@ -381,17 +384,42 @@ app.post('/api/session/:code/face-frame', express.json({ limit: '5mb' }), (req, 
         headPose: data.headPose || 'straight'
     };
 
-    // Update behavior
-    if (data.eyeDirection) session.behaviorData.eyes = data.eyeDirection === 'away' ? 'suspicious' : 'ok';
-    if (data.headPose) session.behaviorData.head = data.headPose === 'turned' ? 'suspicious' : 'ok';
-    if (data.faceCount > 1) session.behaviorData.multiFace = true;
-    if (data.faceCount === 0) session.behaviorData.multiFace = false;
+    // Update behavior and counters (only count new transitions)
+    if (data.eyeDirection) {
+        if (data.eyeDirection === 'away' && session.behaviorData.eyes !== 'suspicious') {
+            session.eyeTurnCount++;
+            addSessionAlert(session, 'warning', `Looking away (Count: ${session.eyeTurnCount})`);
+        }
+        session.behaviorData.eyes = data.eyeDirection === 'away' ? 'suspicious' : 'ok';
+    }
 
-    // Generate alerts
-    if (!data.faceFound && data.faceCount === 0) addSessionAlert(session, 'danger', 'No face detected');
-    else if (data.faceCount > 1) addSessionAlert(session, 'danger', `Multiple faces: ${data.faceCount}`);
-    if (data.eyeDirection === 'away') addSessionAlert(session, 'warning', 'Candidate looking away');
-    if (data.headPose === 'turned') addSessionAlert(session, 'warning', 'Head turned away');
+    if (data.headPose) {
+        if (data.headPose === 'turned' && session.behaviorData.head !== 'suspicious') {
+            session.headTurnCount++;
+            addSessionAlert(session, 'warning', `Head turned (Count: ${session.headTurnCount})`);
+        }
+        session.behaviorData.head = data.headPose === 'turned' ? 'suspicious' : 'ok';
+    }
+
+    if (data.faceCount > 1) {
+        if (!session.behaviorData.multiFace) {
+            session.multiFaceCount++;
+            addSessionAlert(session, 'danger', `Multiple faces! (Count: ${session.multiFaceCount})`);
+        }
+        session.behaviorData.multiFace = true;
+    } else {
+        session.behaviorData.multiFace = false;
+    }
+
+    // Face missing tracking
+    if (!data.faceFound && data.faceCount === 0) {
+        if (!session.behaviorData.faceMissing) {
+            addSessionAlert(session, 'danger', 'No face detected');
+            session.behaviorData.faceMissing = true;
+        }
+    } else {
+        session.behaviorData.faceMissing = false;
+    }
 
     updateSessionRisk(session);
     res.json({ ok: true });
@@ -530,6 +558,9 @@ app.get('/api/session/:code/status', (req, res) => {
         },
         tabSwitchCount: session.tabSwitchCount,
         pasteCount: session.pasteCount,
+        headTurnCount: session.headTurnCount,
+        eyeTurnCount: session.eyeTurnCount,
+        multiFaceCount: session.multiFaceCount,
         alerts: recentAlerts,
         riskScore: session.riskScore,
         currentQuestion: session.currentQuestion,
